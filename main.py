@@ -1,156 +1,169 @@
-# -*- coding: utf-8 -*-
-
 from telegram.ext import Updater
 from telegram.ext import CommandHandler
 from telegram.ext import Filters
 from telegram.ext import MessageHandler
 from collections import *
+from my_token import my_token
 from functools import *
 import json
 import sys
 
-token = "1117367323:AAG-cYd0Po4RO5XeJu3lF5jn535dOE2BW38"
+class State:
+    #chats = {}  # token -> [id1, id2]
+    #id_num = {}  # id -> token
+    #state = {}  # 0 - no token ; 1 - sending token; 2 - token sent
+    #all_ids = []
+    #confirmed = {}  # 0 - no confirmation yet ; 1 - OK
+    
+    info = {}
+    
+    def __init__(self):
+        info = {'chats' : {}, 'id_num' : {}, 'state' : {}, 'all_ids' : [], 'confirmed' : {}}        
+    
+    def save_data(self, DATAFILE = "data.txt"):
+        with open(DATAFILE, "w") as fileout:
+            print(json.dumps(self.info), file=fileout)
+        return
+    
+    def load_data(self, DATAFILE = "data.txt"):
+        with open(DATAFILE, "r") as filein:
+            s = filein.readline().strip()
+            self.info = json.loads(s)  
 
-chats = {}  # token -> [id1, id2]
-id_num = {}  # id -> token
-state = {}  # 0 - no token ; 1 - sending token; 2 - token sent
-all_ids = []
-confirmed = {}  # 0 - no confirmation yet ; 1 - OK
-
-DATA_FILE = "data.txt"
 
 # string constants
-notokenreply = "РўС‹ РµС‰Рµ РЅРµ СЃРѕСЃС‚РѕРёС€СЊ РІ С‡Р°С‚Рµ. РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РЅР°РїРёС€Рё '/start' Рё СЃР»РµРґСѓР№ РґР°Р»СЊРЅРµР№С€РёРј СѓРєР°Р·Р°РЅРёСЏРј."
-waitingreply = "Р’СЃРµ, С‚С‹ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ. Р–РґРµРј С‚РІРѕРµРіРѕ СЃРѕР±РµСЃРµРґРЅРёРєР°."
-waitingreply2 = "Р–РґРµРј С‚РІРѕРµРіРѕ СЃРѕР±РµСЃРµРґРЅРёРєР°."
-readyreply = "РўРІРѕР№ СЃРѕР±РµСЃРµРґРЅРёРє РїРѕРґРєР»СЋС‡РёР»СЃСЏ, РјРѕР¶РµС‚Рµ РїРёСЃР°С‚СЊ РґСЂСѓРі РґСЂСѓРіСѓ."
-startreply = "Р§С‚РѕР±С‹ РїРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ Рє С‡Р°С‚Сѓ, РЅР°РїРёС€Рё '/token'."
-allcommandsreply = "/start - Р§С‚РѕР±С‹ РїРѕР»СѓС‡РёС‚СЊ РёРЅСЃС‚СЂСѓРєС†РёРё РґР»СЏ РЅР°С‡Р°Р»Р° РїРµСЂРµРїРёСЃРєРё, РЅР°РїРёС€Рё СЌС‚Сѓ РєРѕРјР°РЅРґСѓ.\n" \
-                   "/help - Р’С‹РІРѕРґРёС‚ СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ Рё РёС… РѕРїРёСЃР°РЅРёРµ.\n" \
-                   "/token - РљРѕРјР°РЅРґР° РґР»СЏ РІРІРѕРґР° С‚РѕРєРµРЅР° С‡Р°С‚Р°.\n" \
-                   "/exit - РќР°РїРёС€Рё, С‡С‚РѕР±С‹ РІС‹Р№С‚Рё РёР· С‡Р°С‚Р°.\n" \
-                   "/feedback - Р’С‹РІРѕРґРёС‚ РєРѕРЅС‚Р°РєС‚С‹ РґР»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРІСЏР·Рё."
-sendtokenreply = "РћС‚Р»РёС‡РЅРѕ, С‚РµРїРµСЂСЊ РїСЂРёС€Р»Рё С‚РѕРєРµРЅ. РќР°РїРѕРјРёРЅР°СЋ, С‡С‚Рѕ СЌС‚Рѕ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ СЃС‚СЂРѕРєР° РёР· С†РёС„СЂ Рё Р»Р°С‚РёРЅСЃРєРёС… Р±СѓРєРІ."
-errorreply = "Р›РёР±Рѕ СЌС‚Р° РєРѕРјР°РЅРґР° РµС‰Рµ РЅРµ РЅР°РїРёСЃР°РЅР°, Р»РёР±Рѕ РµРµ РІРѕРѕР±С‰Рµ РЅРµ СЃСѓС‰РµСЃС‚РІСѓРµС‚. РќР° РІСЃСЏРєРёР№ СЃР»СѓС‡Р°Р№ РїСЂРѕРІРµСЂСЊ РїСЂР°РІРёР»СЊРЅРѕСЃС‚СЊ РЅР°РїРёСЃР°РЅРёСЏ."
-feedbackreply = "РџРёС€РёС‚Рµ РјРЅРµ РІ С‚РµР»РµРіСЂР°Рј @AlenAliev"
-ineedconfirmreply = "РњРЅРµ РЅСѓР¶РЅРѕ С‚РІРѕРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ, РµСЃР»Рё С‚С‹ СѓРІРµСЂРµРЅ, С‚Рѕ РЅР°РїРёС€Рё '/exit' РµС‰Рµ СЂР°Р·. Р•СЃР»Рё С‚С‹ РїРµСЂРµРґСѓРјР°Р», С‚Рѕ РїСЂРѕСЃС‚Рѕ РїСЂРѕРґРѕР»Р¶Р°Р№ РѕР±С‰Р°С‚СЊСЃСЏ."
-nochatreply = "РЈРїСЃ, С‚С‹ РµС‰Рµ РЅРµ СЃРѕСЃС‚РѕРёС€СЊ РІ С‡Р°С‚Рµ. РќР°РїРёС€Рё '/start', С‡С‚РѕР±С‹ РЅР°С‡Р°С‚СЊ РЅРѕРІС‹Р№ С‡Р°С‚."
-deletedchatreply = "РўРІРѕР№ СЃРѕР±РµСЃРµРґРЅРёРє РІС‹С€РµР» РёР· С‡Р°С‚Р°."
-confirmeddeletereply = "Р’СЃС‘, С‡Р°С‚ СѓРґР°Р»РµРЅ. РќР°РїРёС€Рё '/start', С‡С‚РѕР±С‹ РЅР°С‡Р°С‚СЊ РЅРѕРІС‹Р№ С‡Р°С‚."
-alreadyinachatreply = "РЈРїСЃ, С‚С‹ СѓР¶Рµ СЃРѕСЃС‚РѕРёС€СЊ РІ С‡Р°С‚Рµ. Р§С‚РѕР±С‹ РІС‹Р№С‚Рё РёР· С‡Р°С‚Р°, РЅР°РїРёС€Рё '/exit'"
-needastringreply = "Р’РІРµРґРё, РїРѕР¶Р°Р»СѓР№СЃС‚Р°, СЃС‚СЂРѕРєСѓ РёР· С†РёС„СЂ Рё Р±СѓРєРІ."
+class Info:
+    notokenreply = "Ты еще не состоишь в чате. Пожалуйста, напиши '/start' и следуй дальнейшим указаниям."
+    waitingreply = "Все, ты зарегистрирован. Ждем твоего собеседника."
+    waitingreply2 = "Ждем твоего собеседника."
+    readyreply = "Твой собеседник подключился, можете писать друг другу."
+    startreply = "Чтобы подключиться к чату, напиши '/token'."
+    allcommandsreply = """/start - Чтобы получить инструкции для начала переписки, напиши эту команду.\n
+/help - Выводит список команд и их описание.\n
+/token - Команда для ввода токена чата.\n
+/exit - Напиши, чтобы выйти из чата.\n
+/feedback - Выводит контакты для обратной связи."""
+    sendtokenreply = "Отлично, теперь пришли токен. Напоминаю, что это должна быть строка из цифр и латинских букв."
+    errorreply = "Либо эта команда еще не написана, либо ее вообще не существует. На всякий случай проверь правильность написания."
+    feedbackreply = "Пишите мне в телеграм @AlenAliev"
+    ineedconfirmreply = "Мне нужно твое подтверждение, если ты уверен, то напиши '/exit' еще раз. Если ты передумал, то просто продолжай общаться."
+    nochatreply = "Упс, ты еще не состоишь в чате. Напиши '/start', чтобы начать новый чат."
+    deletedchatreply = "Твой собеседник вышел из чата."
+    confirmeddeletereply = "Всё, чат удален. Напиши '/start', чтобы начать новый чат."
+    alreadyinachatreply = "Упс, ты уже состоишь в чате. Чтобы выйти из чата, напиши '/exit'"
+    needastringreply = "Введи, пожалуйста, строку из цифр и букв."
 
-updater = Updater(token=token)
+updater = Updater(token=my_token)
 
-def save_data():
-    with open(DATA_FILE, "w") as fileout:
-        print(json.dumps(chats), file=fileout)
-        print(json.dumps(id_num), file=fileout)
-        print(json.dumps(state), file=fileout)
-        print(json.dumps(all_ids), file=fileout)
-        print(json.dumps(confirmed), file=fileout)
-        
-        
-def load_data():
-    with open(DATA_FILE, "r") as filein:
-        s = filein.readlines()
-        s = [el.strip() for el in s]
-        global chats
-        global id_num
-        global all_ids
-        global state
-        global confirmed
-        chats = json.loads(s[0])
-        id_num = json.loads(s[1])
-        state = json.loads(s[2])
-        all_ids = json.loads(s[3])
-        confirmed = json.loads(s[4])
-
+CS = State() # state of current session
 
 def data_keeper(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         ans = func(*args, **kwargs)
-        save_data()
+        #CS.save_data("data.txt")
         return ans
     return wrapper
+
+def message_handler(case):
+    def wrap(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        handler = MessageHandler(case, wrapper)
+        updater.dispatcher.add_handler(handler)            
+        return wrapper
+    return wrap
+
+def command_handler(case):
+    def wrap(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        handler = CommandHandler(case, wrapper)  
+        updater.dispatcher.add_handler(handler)               
+        return wrapper     
+    return wrap 
 
 def send(bot, id, text):
     bot.sendMessage(id, text)
 
 @data_keeper
 def check_ids(current_id):
-    if current_id not in all_ids:
-        all_ids.append(current_id)
-        state[current_id] = 0
+    if current_id not in CS.info['all_ids']:
+        CS.info['all_ids'].append(current_id)
+        CS.info['state'][current_id] = 0
 
 @data_keeper
 def check_exit(current_id):
-    if confirmed.get(current_id) == None:
+    if CS.info['confirmed'].get(current_id) == None:
         return
-    if confirmed[current_id] == 1:
-        confirmed[current_id] = 0
+    if CS.info['confirmed'][current_id] == 1:
+        CS.info['confirmed'][current_id] = 0
 
+@message_handler(~Filters.command & Filters.text)
 @data_keeper
 def handle_text(bot, update):
     current_id = str(update.message.chat_id)
     message_text = update.message.text
     check_exit(current_id)
-    if current_id not in all_ids:  # first message
-        all_ids.append(current_id)
-        state[current_id] = 0
-        send(bot, current_id, notokenreply)
-    elif state[current_id] == 0:  # no token id yet
-        send(bot, current_id, notokenreply)
-    elif state[current_id] == 1:
-        id_num[current_id] = message_text
-        if chats.get(message_text) == None:
-            chats[message_text] = [current_id]
-            send(bot, current_id, waitingreply)
+    if current_id not in CS.info['all_ids']:  # first message
+        CS.info['all_ids'].append(current_id)
+        CS.info['state'][current_id] = 0
+        send(bot, current_id, Info.notokenreply)
+    elif CS.info['state'][current_id] == 0:  # no token id yet
+        send(bot, current_id, Info.notokenreply)
+    elif CS.info['state'][current_id] == 1:
+        CS.info['id_num'][current_id] = message_text
+        if CS.info['chats'].get(message_text) == None:
+            CS.info['chats'][message_text] = [current_id]
+            send(bot, current_id, Info.waitingreply)
         else:
-            chats[message_text].append(current_id)
-            send(bot, current_id, readyreply)
-        state[current_id] = 2
-    elif state[current_id] == 2:
-        sys.stdout.flush()
-        if len(chats[id_num[current_id]]) == 1:
-            send(bot, current_id, waitingreply2)
+            CS.info['chats'][message_text].append(current_id)
+            send(bot, current_id, Info.readyreply)
+        CS.info['state'][current_id] = 2
+    elif CS.info['state'][current_id] == 2:
+        if len(CS.info['chats'][CS.info['id_num'][current_id]]) == 1:
+            send(bot, current_id, Info.waitingreply2)
         else:
-            if (current_id == chats[id_num[current_id]][0]):
-                send(bot, chats[id_num[current_id]][1], message_text)
+            if (current_id == CS.info['chats'][CS.info['id_num'][current_id]][0]):
+                send(bot, CS.info['chats'][CS.info['id_num'][current_id]][1], message_text)
             else:
-                send(bot, chats[id_num[current_id]][0], message_text)
+                send(bot, CS.info['chats'][CS.info['id_num'][current_id]][0], message_text)
     return
 
 @data_keeper
 def handle_not_text(bot, update, message_text, message_func):
     current_id = str(update.message.chat_id)
     check_exit(current_id)
-    if current_id not in all_ids:  # first message
-        all_ids.append(current_id)
-        state[current_id] = 0
-        send(bot, current_id, notokenreply)
-    elif state[current_id] == 0:  # no token id yet
-        send(bot, current_id, notokenreply)
-    elif state[current_id] == 1:
-        send(bot, current_id, needastringreply)
-    elif state[current_id] == 2:
-        if len(chats[id_num[current_id]]) == 1:
-            send(bot, current_id, waitingreply2)
+    if current_id not in CS.info['all_ids']:  # first message
+        CS.info['all_ids'].append(current_id)
+        CS.info['state'][current_id] = 0
+        send(bot, current_id, Info.notokenreply)
+    elif CS.info['state'][current_id] == 0:  # no token id yet
+        send(bot, current_id, Info.notokenreply)
+    elif CS.info['state'][current_id] == 1:
+        send(bot, current_id, Info.needastringreply)
+    elif CS.info['state'][current_id] == 2:
+        if len(CS.info['chats'][CS.info['id_num'][current_id]]) == 1:
+            send(bot, current_id, Info.waitingreply2)
         else:
-            if (current_id == chats[id_num[current_id]][0]):
-                message_func(chats[id_num[current_id]][1], message_text.file_id)
+            if (current_id == CS.info['chats'][CS.info['id_num'][current_id]][0]):
+                message_func(CS.info['chats'][CS.info['id_num'][current_id]][1], message_text.file_id)
             else:
-                message_func(chats[id_num[current_id]][0], message_text.file_id)
+                message_func(CS.info['chats'][CS.info['id_num'][current_id]][0], message_text.file_id)
 
+@message_handler(~Filters.command & Filters.sticker)
 def handle_sticker(bot, update):
     message_text = update.message.sticker
     handle_not_text(bot, update, message_text, bot.sendSticker)
 
+@message_handler(~Filters.command & Filters.voice)
 def handle_vox(bot, update):
     message_text = update.message.voice
     handle_not_text(bot, update, message_text, bot.sendVoice)
 
+@message_handler(~Filters.command & Filters.photo)
 def handle_photo(bot, update):
     message_text = update.message.photo[-1]
     handle_not_text(bot, update, message_text, bot.sendPhoto)
@@ -161,78 +174,61 @@ def send_command(bot, update, message : 'String'):
     check_ids(current_id)
     send(bot, current_id, message)    
     
+@command_handler("start")
 def handle_start(bot, update):
-    send_command(bot, update, startreply)
+    send_command(bot, update, Info.startreply)
 
+@command_handler("help")
 def handle_help(bot, update):
-    send_command(bot, update, allcommandsreply)
+    send_command(bot, update, Info.allcommandsreply)
 
-def handle_error(bot, update):
-    send_command(bot, update, errorreply)
-
+@command_handler("feedback")
 def handle_feedback(bot, update):
-    send_command(bot, update, feedbackreply)
-
+    send_command(bot, update, Info.feedbackreply)
+    
+@command_handler("exit")
 @data_keeper
 def handle_exit(bot, update):
     current_id = str(update.message.chat_id)
     check_ids(current_id)
-    if state[current_id] != 2:
-        send(bot, current_id, nochatreply)
-    elif confirmed.get(current_id) == None or confirmed[current_id] == 0:
-        send(bot, current_id, ineedconfirmreply)
-        confirmed[current_id] = 1
-    elif confirmed[current_id] == 1:
-        state[current_id] = 0
-        if len(chats[id_num[current_id]]) == 1:
+    if CS.info['state'][current_id] != 2:
+        send(bot, current_id, Info.nochatreply)
+    elif CS.info['confirmed'].get(current_id) == None or CS.info['confirmed'][current_id] == 0:
+        send(bot, current_id, Info.ineedconfirmreply)
+        CS.info['confirmed'][current_id] = 1
+    elif CS.info['confirmed'][current_id] == 1:
+        CS.info['state'][current_id] = 0
+        if len(CS.info['chats'][CS.info['id_num'][current_id]]) == 1:
             tmp = 0
-        elif chats[id_num[current_id]][0] == current_id:
-            send(bot, chats[id_num[current_id]][1], deletedchatreply)
-            state[chats[id_num[current_id]][1]] = 0
-            id_num.pop(chats[id_num[current_id]][1])
+        elif CS.info['chats'][CS.info['id_num'][current_id]][0] == current_id:
+            send(bot, CS.info['chats'][CS.info['id_num'][current_id]][1], Info.deletedchatreply)
+            CS.info['state'][CS.info['chats'][CS.info['id_num'][current_id]][1]] = 0
+            CS.info['id_num'].pop(CS.info['chats'][CS.info['id_num'][current_id]][1])
         else:
-            send(bot, chats[id_num[current_id]][0], deletedchatreply)
-            state[chats[id_num[current_id]][0]] = 0
-            id_num.pop(chats[id_num[current_id]][0])
-        chats.pop(id_num[current_id])
-        id_num.pop(current_id)
-        send(bot, current_id, confirmeddeletereply)
-        check_exit(current_id)
+            send(bot, CS.info['chats'][CS.info['id_num'][current_id]][0], Info.deletedchatreply)
+            CS.info['state'][CS.info['chats'][CS.info['id_num'][current_id]][0]] = 0
+            CS.info['id_num'].pop(CS.info['chats'][CS.info['id_num'][current_id]][0])
+        CS.info['chats'].pop(CS.info['id_num'][current_id])
+        CS.info['id_num'].pop(current_id)
+        send(bot, current_id, Info.confirmeddeletereply)
+        check_exit(current_id)    
 
+@command_handler("token")
 @data_keeper
 def handle_token(bot, update):
     current_id = str(update.message.chat_id)
     check_exit(current_id)
     check_ids(current_id)
-    if state.get(current_id) != None and state[current_id] == 2:
-        send(bot, current_id, alreadyinachatreply)
+    if CS.info['state'].get(current_id) != None and CS.info['state'][current_id] == 2:
+        send(bot, current_id, Info.alreadyinachatreply)
         return
-    state[current_id] = 1
-    send(bot, current_id, sendtokenreply)
+    CS.info['state'][current_id] = 1
+    send(bot, current_id, Info.sendtokenreply)
 
+@message_handler(Filters.command)
+def handle_error(bot, update):
+    send_command(bot, update, Info.errorreply)
 
-load_data()
-
-text_handler = MessageHandler(~Filters.command & Filters.text, handle_text)  # text
-sticker_handler = MessageHandler(~Filters.command & Filters.sticker, handle_sticker)  # sticker
-vox_handler = MessageHandler(~Filters.command & Filters.voice, handle_vox)  # audio
-photo_handler = MessageHandler(~Filters.command & Filters.photo, handle_photo)  # photo
-start_handler = CommandHandler("start", handle_start)
-help_handler = CommandHandler("help", handle_help)
-token_handler = CommandHandler("token", handle_token)
-feedback_handler = CommandHandler("feedback", handle_feedback)
-exit_handler = CommandHandler("exit", handle_exit)
-error_handler = MessageHandler(Filters.command, handle_error)
-
-updater.dispatcher.add_handler(text_handler)
-updater.dispatcher.add_handler(start_handler)
-updater.dispatcher.add_handler(help_handler)
-updater.dispatcher.add_handler(token_handler)
-updater.dispatcher.add_handler(feedback_handler)
-updater.dispatcher.add_handler(exit_handler)
-updater.dispatcher.add_handler(sticker_handler)
-updater.dispatcher.add_handler(vox_handler)
-updater.dispatcher.add_handler(photo_handler)
-updater.dispatcher.add_handler(error_handler)
+CS.load_data()
 
 updater.start_polling()
